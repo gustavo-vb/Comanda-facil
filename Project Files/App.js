@@ -15,12 +15,12 @@ import firebase from 'firebase';
 import 'firebase/firestore';
 
 const firebaseConfig = {
-  apiKey: '',
-  authDomain: '',
-  projectId: '',
-  storageBucket: '',
-  messagingSenderId: '',
-  appId: '',
+  apiKey: 'AIzaSyDDhH9Jpd3sKdiwyHUK2U3j66MDcO3HU8Y',
+  authDomain: 'comanda-facil-eam.firebaseapp.com',
+  projectId: 'comanda-facil-eam',
+  storageBucket: 'comanda-facil-eam.firebasestorage.app',
+  messagingSenderId: '681119740021',
+  appId: '1:681119740021:web:f68b6732f1266482d9883c',
 };
 
 if (!firebase.apps.length) {
