@@ -1,7 +1,8 @@
 {
   "dependencies": {
-    "expo-sqlite": "~16.0.10",
+    "firebase": "8.10.0",
     "@expo/vector-icons": "^15.0.3",
+    "firebase/firestore": "*",
     "react-native-paper": "4.9.2"
   }
 }
