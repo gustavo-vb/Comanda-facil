@@ -10,7 +10,7 @@ O objetivo do **Comanda Fácil** é permitir o cadastro de mesas, o lançamento 
 
 - React Native;
 - Expo Snack;
-- SQLite;
+- Firebase (Substituí o SQLite para dar mobilidade de conexão ao aplicativo);
 - JavaScript.
 
 ## Funcionalidades
