@@ -8,11 +8,26 @@ import {
   StyleSheet,
   SafeAreaView,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 
-import * as SQLite from 'expo-sqlite';
+import firebase from 'firebase';
+import 'firebase/firestore';
 
-let db = null;
+const firebaseConfig = {
+  apiKey: '',
+  authDomain: '',
+  projectId: '',
+  storageBucket: '',
+  messagingSenderId: '',
+  appId: '',
+};
+
+if (!firebase.apps.length) {
+  firebase.initializeApp(firebaseConfig);
+}
+
+const db = firebase.firestore();
 
 export default function App() {
   const [tela, setTela] = useState('inicio');
@@ -24,134 +39,167 @@ export default function App() {
   const [preco, setPreco] = useState('');
   const [itens, setItens] = useState([]);
 
+  const [loading, setLoading] = useState(false);
+
   useEffect(() => {
-    iniciarBanco();
+    carregarMesas();
   }, []);
 
-  async function iniciarBanco() {
+  async function carregarMesas() {
+    setLoading(true);
+
     try {
-      db = await SQLite.openDatabaseAsync('comanda_facil.db');
+      const querySnapshot = await db
+        .collection('mesas')
+        .orderBy('numero', 'asc')
+        .get();
 
-      await db.execAsync(`
-        CREATE TABLE IF NOT EXISTS mesas (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          numero INTEGER NOT NULL UNIQUE
-        );
+      const mesasData = [];
 
-        CREATE TABLE IF NOT EXISTS itens_comanda (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          mesa_id INTEGER NOT NULL,
-          produto TEXT NOT NULL,
-          preco REAL NOT NULL,
-          FOREIGN KEY (mesa_id) REFERENCES mesas(id)
+      querySnapshot.forEach((doc) => {
+        mesasData.push({
+          id: doc.id,
+          ...doc.data(),
+        });
+      });
+
+      setMesas(mesasData);
+    } catch (erro) {
+      console.log('Erro ao carregar mesas:', erro);
+      Alert.alert('Erro', 'Não foi possível carregar as mesas.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function adicionarMesa() {
+    try {
+      if (mesas.length >= 5) {
+        Alert.alert(
+          'Limite atingido',
+          'Usuários grátis podem cadastrar até 5 mesas.'
         );
-      `);
+        return;
+      }
+
+      const numerosExistentes = mesas.map((mesa) => Number(mesa.numero));
+
+      let proximoNumero = 1;
+
+      while (numerosExistentes.includes(proximoNumero)) {
+        proximoNumero++;
+      }
+
+      await db.collection('mesas').add({
+        numero: proximoNumero,
+        status: 'livre',
+        dataCriacao: firebase.firestore.FieldValue.serverTimestamp(),
+      });
 
       await carregarMesas();
     } catch (erro) {
-      console.log('Erro ao iniciar banco:', erro);
-      Alert.alert('Erro', 'Não foi possível iniciar o banco de dados.');
+      console.log('Erro ao adicionar mesa:', erro);
+      Alert.alert('Erro', 'Não foi possível adicionar a mesa.');
     }
   }
 
   async function removerMesa(mesa) {
-  Alert.alert(
-    'Remover mesa',
-    `Deseja remover a mesa ${String(mesa.numero).padStart(2, '0')}?\n\nTodos os produtos dessa mesa também serão apagados.`,
-    [
-      {
-        text: 'Cancelar',
-        style: 'cancel',
-      },
-      {
-        text: 'Remover',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await db.runAsync(
-              'DELETE FROM itens_comanda WHERE mesa_id = ?;',
-              [mesa.id]
-            );
-
-            await db.runAsync(
-              'DELETE FROM mesas WHERE id = ?;',
-              [mesa.id]
-            );
-
-            await carregarMesas();
-          } catch (erro) {
-            console.log('Erro ao remover mesa:', erro);
-            Alert.alert('Erro', 'Não foi possível remover a mesa.');
-          }
+    Alert.alert(
+      'Remover mesa',
+      `Deseja remover a mesa ${String(mesa.numero).padStart(
+        2,
+        '0'
+      )}?\n\nTodos os produtos dessa mesa também serão apagados.`,
+      [
+        {
+          text: 'Cancelar',
+          style: 'cancel',
         },
-      },
-    ]
-  );
-}
+        {
+          text: 'Remover',
+          style: 'destructive',
+          onPress: async () => {
+            setLoading(true);
 
-  async function carregarMesas() {
-    try {
-      const resultado = await db.getAllAsync(
-        'SELECT * FROM mesas ORDER BY numero ASC;'
-      );
+            try {
+              const mesaRef = db.collection('mesas').doc(mesa.id);
+              const itensSnapshot = await mesaRef.collection('itens').get();
 
-      setMesas(resultado);
-    } catch (erro) {
-      console.log('Erro ao carregar mesas:', erro);
-    }
-  }
+              const batch = db.batch();
 
- async function adicionarMesa() {
-  try {
-    if (mesas.length >= 5) {
-      Alert.alert(
-        'Limite atingido',
-        'Usuários grátis podem cadastrar até 5 mesas.'
-      );
-      return;
-    }
+              itensSnapshot.forEach((documento) => {
+                batch.delete(documento.ref);
+              });
 
-    const numerosExistentes = mesas.map((mesa) => mesa.numero);
+              batch.delete(mesaRef);
 
-    let proximoNumero = 1;
+              await batch.commit();
 
-    while (numerosExistentes.includes(proximoNumero)) {
-      proximoNumero++;
-    }
+              if (mesaSelecionada && mesaSelecionada.id === mesa.id) {
+                setMesaSelecionada(null);
+                setItens([]);
+                setTela('mesas');
+              }
 
-    await db.runAsync(
-      'INSERT INTO mesas (numero) VALUES (?);',
-      [proximoNumero]
+              await carregarMesas();
+            } catch (erro) {
+              console.log('Erro ao remover mesa:', erro);
+              Alert.alert('Erro', 'Não foi possível remover a mesa.');
+            } finally {
+              setLoading(false);
+            }
+          },
+        },
+      ]
     );
-
-    await carregarMesas();
-  } catch (erro) {
-    console.log('Erro ao adicionar mesa:', erro);
-    Alert.alert('Erro', 'Não foi possível adicionar a mesa.');
   }
-}
 
   async function abrirMesa(mesa) {
     setMesaSelecionada(mesa);
+    setProduto('');
+    setPreco('');
     setTela('comanda');
+
     await carregarItens(mesa.id);
   }
 
   async function carregarItens(mesaId) {
-    try {
-      const resultado = await db.getAllAsync(
-        'SELECT * FROM itens_comanda WHERE mesa_id = ? ORDER BY id DESC;',
-        [mesaId]
-      );
+    setLoading(true);
 
-      setItens(resultado);
+    try {
+      const querySnapshot = await db
+        .collection('mesas')
+        .doc(mesaId)
+        .collection('itens')
+        .orderBy('dataCriacao', 'desc')
+        .get();
+
+      const itensData = [];
+
+      querySnapshot.forEach((doc) => {
+        itensData.push({
+          id: doc.id,
+          ...doc.data(),
+          preco: Number(doc.data().preco || 0),
+        });
+      });
+
+      setItens(itensData);
     } catch (erro) {
       console.log('Erro ao carregar itens:', erro);
+      Alert.alert('Erro', 'Não foi possível carregar os produtos da mesa.');
+    } finally {
+      setLoading(false);
     }
   }
 
   async function adicionarProduto() {
     try {
+      if (!mesaSelecionada) {
+        Alert.alert('Erro', 'Nenhuma mesa selecionada.');
+        return;
+      }
+
       if (!produto.trim()) {
         Alert.alert('Atenção', 'Informe o nome do produto.');
         return;
@@ -169,15 +217,24 @@ export default function App() {
         return;
       }
 
-      await db.runAsync(
-        'INSERT INTO itens_comanda (mesa_id, produto, preco) VALUES (?, ?, ?);',
-        [mesaSelecionada.id, produto.trim(), precoConvertido]
-      );
+      const mesaRef = db.collection('mesas').doc(mesaSelecionada.id);
+
+      await mesaRef.collection('itens').add({
+        produto: produto.trim(),
+        preco: precoConvertido,
+        dataCriacao: firebase.firestore.FieldValue.serverTimestamp(),
+      });
+
+      await mesaRef.update({
+        status: 'ocupada',
+        atualizadoEm: firebase.firestore.FieldValue.serverTimestamp(),
+      });
 
       setProduto('');
       setPreco('');
 
       await carregarItens(mesaSelecionada.id);
+      await carregarMesas();
     } catch (erro) {
       console.log('Erro ao adicionar produto:', erro);
       Alert.alert('Erro', 'Não foi possível adicionar o produto.');
@@ -186,60 +243,104 @@ export default function App() {
 
   async function excluirItem(id) {
     try {
-      await db.runAsync(
-        'DELETE FROM itens_comanda WHERE id = ?;',
-        [id]
-      );
+      if (!mesaSelecionada) return;
+
+      await db
+        .collection('mesas')
+        .doc(mesaSelecionada.id)
+        .collection('itens')
+        .doc(id)
+        .delete();
 
       await carregarItens(mesaSelecionada.id);
     } catch (erro) {
       console.log('Erro ao excluir item:', erro);
+      Alert.alert('Erro', 'Não foi possível excluir o produto.');
     }
   }
 
   async function fecharMesa() {
-  const total = calcularTotal();
+    const total = calcularTotal();
 
-  if (itens.length === 0) {
+    if (!mesaSelecionada) {
+      Alert.alert('Erro', 'Nenhuma mesa selecionada.');
+      return;
+    }
+
+    if (itens.length === 0) {
+      Alert.alert(
+        'Mesa sem consumo',
+        'Esta mesa não possui produtos lançados.'
+      );
+      return;
+    }
+
     Alert.alert(
-      'Mesa sem consumo',
-      'Esta mesa não possui produtos lançados.'
+      'Fechamento da mesa',
+      `Total da mesa ${String(mesaSelecionada.numero).padStart(
+        2,
+        '0'
+      )}: ${formatarMoeda(total)}\n\nO valor foi pago?`,
+      [
+        {
+          text: 'Cancelar',
+          style: 'cancel',
+        },
+        {
+          text: 'Sim, foi pago',
+          onPress: async () => {
+            setLoading(true);
+
+            try {
+              const mesaRef = db.collection('mesas').doc(mesaSelecionada.id);
+              const itensSnapshot = await mesaRef.collection('itens').get();
+
+              const batch = db.batch();
+
+              itensSnapshot.forEach((documento) => {
+                batch.delete(documento.ref);
+              });
+
+              const fechamentoRef = db.collection('fechamentos').doc();
+
+              batch.set(fechamentoRef, {
+                mesaId: mesaSelecionada.id,
+                numeroMesa: mesaSelecionada.numero,
+                total: total,
+                pago: true,
+                dataFechamento: firebase.firestore.FieldValue.serverTimestamp(),
+              });
+
+              batch.update(mesaRef, {
+                status: 'livre',
+                ultimoFechamentoValor: total,
+                atualizadoEm: firebase.firestore.FieldValue.serverTimestamp(),
+              });
+
+              await batch.commit();
+
+              setItens([]);
+              setProduto('');
+              setPreco('');
+              setMesaSelecionada(null);
+
+              await carregarMesas();
+
+              setTela('mesas');
+            } catch (erro) {
+              console.log('Erro ao fechar mesa:', erro);
+              Alert.alert('Erro', 'Não foi possível fechar a mesa.');
+            } finally {
+              setLoading(false);
+            }
+          },
+        },
+      ]
     );
-    return;
   }
 
-  Alert.alert(
-    'Fechamento da mesa',
-    `Total da mesa ${String(mesaSelecionada.numero).padStart(2, '0')}: ${formatarMoeda(total)}\n\nO valor foi pago?`,
-    [
-      {
-        text: 'Cancelar',
-        style: 'cancel',
-      },
-      {
-        text: 'Sim, foi pago',
-        onPress: async () => {
-          try {
-            await db.runAsync(
-              'DELETE FROM itens_comanda WHERE mesa_id = ?;',
-              [mesaSelecionada.id]
-            );
-
-            setItens([]);
-            setMesaSelecionada(null);
-            setTela('mesas');
-          } catch (erro) {
-            console.log('Erro ao fechar mesa:', erro);
-            Alert.alert('Erro', 'Não foi possível fechar a mesa.');
-          }
-        },
-      },
-    ]
-  );
-}
-
   function calcularTotal() {
-    return itens.reduce((total, item) => total + item.preco, 0);
+    return itens.reduce((total, item) => total + Number(item.preco || 0), 0);
   }
 
   function formatarMoeda(valor) {
@@ -277,36 +378,47 @@ export default function App() {
         </View>
 
         <View style={styles.conteudo}>
-          <FlatList
-            data={mesas}
-            numColumns={3}
-            keyExtractor={(item) => String(item.id)}
-            renderItem={({ item }) => (
-              <View style={styles.areaCardMesa}>
-                <TouchableOpacity
-                  style={styles.cardMesa}
-                  onPress={() => abrirMesa(item)}
-                >
-                  <Text style={styles.iconeMesa}>𓊯</Text>
-                  <Text style={styles.numeroMesa}>
-                    {String(item.numero).padStart(2, '0')}
-                  </Text>
-                </TouchableOpacity>
+          {loading && mesas.length === 0 ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" />
+              <Text style={styles.textoLoading}>Carregando mesas...</Text>
+            </View>
+          ) : (
+            <FlatList
+              data={mesas}
+              numColumns={3}
+              keyExtractor={(item) => String(item.id)}
+              renderItem={({ item }) => (
+                <View style={styles.areaCardMesa}>
+                  <TouchableOpacity
+                    style={styles.cardMesa}
+                    onPress={() => abrirMesa(item)}
+                  >
+                    <Text style={styles.iconeMesa}>𓊯</Text>
+                    <Text style={styles.numeroMesa}>
+                      {String(item.numero).padStart(2, '0')}
+                    </Text>
 
-                <TouchableOpacity
-                  style={styles.botaoRemoverMesa}
-                  onPress={() => removerMesa(item)}
-                >
-                  <Text style={styles.textoRemoverMesa}>X</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-            ListEmptyComponent={
-              <Text style={styles.textoVazio}>
-                Nenhuma mesa cadastrada.
-              </Text>
-            }
-          />
+                    {item.status === 'ocupada' && (
+                      <Text style={styles.statusMesa}>ocupada</Text>
+                    )}
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.botaoRemoverMesa}
+                    onPress={() => removerMesa(item)}
+                  >
+                    <Text style={styles.textoRemoverMesa}>X</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+              ListEmptyComponent={
+                <Text style={styles.textoVazio}>
+                  Nenhuma mesa cadastrada.
+                </Text>
+              }
+            />
+          )}
 
           <View style={styles.areaRodapeConteudo}>
             <Text style={styles.textoLimite}>
@@ -316,6 +428,7 @@ export default function App() {
             <TouchableOpacity
               style={styles.botaoCircular}
               onPress={adicionarMesa}
+              disabled={loading}
             >
               <Text style={styles.textoBotaoCircular}>+</Text>
             </TouchableOpacity>
@@ -336,10 +449,19 @@ export default function App() {
 
         <View style={styles.conteudoConfig}>
           <Text style={styles.emBreve}>{'< EM BREVE >'}</Text>
+
           <View style={styles.linha} />
+
           <Text style={styles.opcaoConfig}>Premium + Sem anúncios</Text>
           <Text style={styles.opcaoConfig}>Sincronizar com servidor desktop</Text>
           <Text style={styles.opcaoConfig}>Sincronizar com dispositivos na rede</Text>
+
+          <TouchableOpacity
+            style={styles.botaoAtualizar}
+            onPress={carregarMesas}
+          >
+            <Text style={styles.textoBotaoAtualizar}>Atualizar dados</Text>
+          </TouchableOpacity>
         </View>
 
         <BarraInferior telaAtual="config" />
@@ -358,7 +480,11 @@ export default function App() {
           <Text style={styles.label}>Número da mesa:</Text>
           <TextInput
             style={styles.input}
-            value={mesaSelecionada ? String(mesaSelecionada.numero).padStart(2, '0') : ''}
+            value={
+              mesaSelecionada
+                ? String(mesaSelecionada.numero).padStart(2, '0')
+                : ''
+            }
             editable={false}
           />
 
@@ -383,6 +509,7 @@ export default function App() {
             <TouchableOpacity
               style={styles.botaoAdicionarProduto}
               onPress={adicionarProduto}
+              disabled={loading}
             >
               <Text style={styles.textoBotaoPequeno}>Adicionar produto</Text>
             </TouchableOpacity>
@@ -391,32 +518,39 @@ export default function App() {
           <View style={styles.listaProdutos}>
             <Text style={styles.tituloLista}>Produtos consumidos:</Text>
 
-            <FlatList
-              data={itens}
-              keyExtractor={(item) => String(item.id)}
-              renderItem={({ item }) => (
-                <View style={styles.itemProduto}>
-                  <View>
-                    <Text style={styles.nomeProduto}>{item.produto}</Text>
-                    <Text style={styles.precoProduto}>
-                      {formatarMoeda(item.preco)}
-                    </Text>
-                  </View>
+            {loading && itens.length === 0 ? (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="small" />
+                <Text style={styles.textoLoading}>Carregando produtos...</Text>
+              </View>
+            ) : (
+              <FlatList
+                data={itens}
+                keyExtractor={(item) => String(item.id)}
+                renderItem={({ item }) => (
+                  <View style={styles.itemProduto}>
+                    <View>
+                      <Text style={styles.nomeProduto}>{item.produto}</Text>
+                      <Text style={styles.precoProduto}>
+                        {formatarMoeda(item.preco)}
+                      </Text>
+                    </View>
 
-                  <TouchableOpacity
-                    style={styles.botaoExcluirItem}
-                    onPress={() => excluirItem(item.id)}
-                  >
-                    <Text style={styles.textoExcluir}>X</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-              ListEmptyComponent={
-                <Text style={styles.textoVazioLista}>
-                  Nenhum produto adicionado.
-                </Text>
-              }
-            />
+                    <TouchableOpacity
+                      style={styles.botaoExcluirItem}
+                      onPress={() => excluirItem(item.id)}
+                    >
+                      <Text style={styles.textoExcluir}>X</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+                ListEmptyComponent={
+                  <Text style={styles.textoVazioLista}>
+                    Nenhum produto adicionado.
+                  </Text>
+                }
+              />
+            )}
           </View>
 
           <View style={styles.areaTotal}>
@@ -437,8 +571,9 @@ export default function App() {
             <TouchableOpacity
               style={styles.botaoVerde}
               onPress={fecharMesa}
+              disabled={loading}
             >
-              <Text style={styles.textoBotaoGrande}>Fecha</Text>
+              <Text style={styles.textoBotaoGrande}>Fechar mesa</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -563,9 +698,20 @@ const styles = StyleSheet.create({
     padding: 14,
   },
 
+  loadingContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+  },
+
+  textoLoading: {
+    marginTop: 8,
+    color: '#777',
+  },
+
   cardMesa: {
-    width: 70,
-    height: 70,
+    width: 75,
+    height: 75,
     borderWidth: 1.5,
     borderColor: '#000',
     alignItems: 'center',
@@ -574,13 +720,19 @@ const styles = StyleSheet.create({
   },
 
   iconeMesa: {
-    fontSize: 34,
+    fontSize: 30,
     color: '#000',
   },
 
   numeroMesa: {
     fontSize: 14,
     color: '#222',
+  },
+
+  statusMesa: {
+    fontSize: 9,
+    color: '#ff1f1f',
+    marginTop: 2,
   },
 
   textoVazio: {
@@ -675,6 +827,19 @@ const styles = StyleSheet.create({
     color: '#999',
     fontSize: 14,
     marginVertical: 14,
+  },
+
+  botaoAtualizar: {
+    marginTop: 30,
+    backgroundColor: '#333',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 6,
+  },
+
+  textoBotaoAtualizar: {
+    color: '#fff',
+    fontSize: 14,
   },
 
   conteudoComanda: {
@@ -804,7 +969,7 @@ const styles = StyleSheet.create({
   },
 
   botaoVermelho: {
-    width: 185,
+    width: 150,
     height: 55,
     backgroundColor: '#ff1f1f',
     borderWidth: 3,
@@ -814,7 +979,7 @@ const styles = StyleSheet.create({
   },
 
   botaoVerde: {
-    width: 185,
+    width: 190,
     height: 55,
     backgroundColor: '#39ff14',
     borderWidth: 3,
@@ -824,20 +989,19 @@ const styles = StyleSheet.create({
   },
 
   textoBotaoGrande: {
-    fontSize: 46,
+    fontSize: 22,
     fontWeight: 'bold',
     color: '#000',
-    marginTop: -6,
   },
 
   areaCardMesa: {
-  width: 80,
-  height: 80,
-  marginRight: 12,
-  marginBottom: 12,
-  marginTop: 12,
-  position: 'relative',
-},
+    width: 85,
+    height: 90,
+    marginRight: 12,
+    marginBottom: 12,
+    marginTop: 12,
+    position: 'relative',
+  },
 
   botaoRemoverMesa: {
     position: 'absolute',
