@@ -75,6 +75,12 @@ O Firebase foi escolhido por permitir que os dados sejam armazenados em nuvem, f
 - Plano premium sem limite de mesas.
 - Tela administrativa para acompanhar vendas.
 
+## Atualizações futuras
+
+QR-Code para acesso usando o Expo no celular:
+
+<img src="Project Files/img/QRCODE.png" width="400" height="400"/>
+
 ## Autor
 
 Gustavo Vilas Boas Pereira
