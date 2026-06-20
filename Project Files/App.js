@@ -9,6 +9,7 @@ import {
   SafeAreaView,
   Alert,
   ActivityIndicator,
+  Image,
 } from 'react-native';
 
 import firebase from 'firebase';
@@ -353,7 +354,7 @@ export default function App() {
   function TelaInicio() {
     return (
       <SafeAreaView style={styles.containerInicio}>
-        <Text style={styles.logo}>✏️</Text>
+        <Image source={require('./img/icone.png')} style={styles.logoImagem} resizeMode="contain"/>
 
         <Text style={styles.tituloGrande}>COMANDA</Text>
         <Text style={styles.tituloGrande}>FÁCIL</Text>
@@ -643,8 +644,9 @@ const styles = StyleSheet.create({
     padding: 24,
   },
 
-  logo: {
-    fontSize: 80,
+  logoImagem: {
+    width: 200,
+    height: 200,
     marginBottom: 30,
   },
 
