@@ -401,7 +401,7 @@ export default function App() {
                     </Text>
 
                     {item.status === 'ocupada' && (
-                      <Text style={styles.statusMesa}>ocupada</Text>
+                      <Text style={styles.statusMesa}>OCUPADA</Text>
                     )}
                   </TouchableOpacity>
 
